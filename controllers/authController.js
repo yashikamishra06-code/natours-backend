@@ -77,7 +77,7 @@ exports.signUp = catchAsync(async (req, res, next) => {
     message:
       'Account created! Please check your email to verify your account.'
   });
-});
+
 
 
 exports.login=catchAsync(async(req,res,next)=>{
@@ -165,34 +165,26 @@ exports.restrictTo=(...roles)=>{
 }
 
 
-exports.forgotPassword = catchAsync(async (req, res, next) => {
-  const user = await User.findOne({ email: req.body.email });
-  if (!user) {
-    return next(new appError("User doesn't exist", 404));
-  }
+exports.forgotPassword=catchAsync(async(req,res,next)=>{
+    console.log(req.body);
+    const user=await User.findOne({ email: req.body.email })
+    if (!user){
+        return next(new appError("User doesn't exists",404))
+    }
+    const resetToken=user.createPasswordResetTokens()
+    await user.save({validateBeforeSave:false})
 
-  const resetToken = user.createPasswordResetTokens();
-  await user.save({ validateBeforeSave: false });
+    const resetURL = `https://natours-frontend-kohl.vercel.app/resetPassword/${resetToken}`;
 
-  const resetURL = `https://natours-frontend-kohl.vercel.app/resetPassword/${resetToken}`;
+    const message=`Forgot ur password? Submit a PATCH request with password and passwordConfirm to: ${resetURL}`
 
-  try {
     await new Email(user, resetURL).sendPasswordReset();
 
     res.status(200).json({
-      status: 'success',
-      message: 'Token sent to mail'
-    });
-  } catch (err) {
-    // IF EMAIL FAILS: Erase the tokens so they can try again later
-    user.passwordResetToken = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save({ validateBeforeSave: false });
-
-    console.error('SMTP ERROR:', err);
-    return next(new appError('There was an error sending the password reset email. Try again later!', 500));
-  }
-});
+        status:'success',
+        message:'Token sent to mail'
+    })
+})
 
 
 exports.resetPassword=catchAsync(async(req,res,next)=>{
