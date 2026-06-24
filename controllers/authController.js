@@ -13,18 +13,25 @@ const signToken=(id)=>{
     // jwt.sign(payload, secret, options)
     return jwt.sign({id},process.env.SECRET,{expiresIn:'90d'})
 }
-const createSendToken=(user,status,res)=>{
-    const token=signToken(user._id)
-    const cookieOptions={
-        expires:new Date(Date.now()+90*24*60*60*1000)
-    }
-    if (process.env.NODE_ENV === 'production') cookieOptions.secure = true
-    res.cookie('jwt',token,cookieOptions)
-    res.status(status).json({
-        status:'success',
-        token
-    })
-}
+const createSendToken = (user, status, res) => {
+  const token = signToken(user._id);
+  const cookieOptions = {
+    expires: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    httpOnly: true // <-- ALWAYS add this for security (prevents XSS)
+  };
+  
+  if (process.env.NODE_ENV === 'production') {
+    cookieOptions.secure = true;
+    cookieOptions.sameSite = 'none'; // <-- REQUIRED for Vercel -> Render cookies
+  }
+
+  res.cookie('jwt', token, cookieOptions);
+  
+  res.status(status).json({
+    status: 'success',
+    token
+  });
+};
 
 exports.signUp = catchAsync(async (req, res, next) => {
   const newUser = await User.create({
@@ -35,6 +42,27 @@ exports.signUp = catchAsync(async (req, res, next) => {
     role: req.body.role == 'guide' ? 'guide' : 'user'
   });
 
+  const verificationToken = newUser.createEmailVerificationToken();
+  await newUser.save({ validateBeforeSave: false });
+
+  const verificationURL = `https://natours-frontend-kohl.vercel.app/verify-email/${verificationToken}`;
+
+  // DEFENSIVE PROGRAMMING: Try to send the email
+  try {
+    await new Email(newUser, verificationURL).sendEmailVerification();
+
+    res.status(201).json({
+      status: 'success',
+      message: 'Account created! Please check your email to verify your account.'
+    });
+  } catch (err) {
+    // IF EMAIL FAILS: Delete the ghost user from the database!
+    await User.findByIdAndDelete(newUser._id);
+    
+    console.error('SMTP ERROR:', err);
+    return next(new appError('There was an error sending the verification email. Please try signing up again.', 500));
+  }
+});
   const verificationToken =
     newUser.createEmailVerificationToken();
 
@@ -137,26 +165,34 @@ exports.restrictTo=(...roles)=>{
 }
 
 
-exports.forgotPassword=catchAsync(async(req,res,next)=>{
-    console.log(req.body);
-    const user=await User.findOne({ email: req.body.email })
-    if (!user){
-        return next(new appError("User doesn't exists",404))
-    }
-    const resetToken=user.createPasswordResetTokens()
-    await user.save({validateBeforeSave:false})
+exports.forgotPassword = catchAsync(async (req, res, next) => {
+  const user = await User.findOne({ email: req.body.email });
+  if (!user) {
+    return next(new appError("User doesn't exist", 404));
+  }
 
-    const resetURL = `https://natours-frontend-kohl.vercel.app/resetPassword/${resetToken}`;
+  const resetToken = user.createPasswordResetTokens();
+  await user.save({ validateBeforeSave: false });
 
-    const message=`Forgot ur password? Submit a PATCH request with password and passwordConfirm to: ${resetURL}`
+  const resetURL = `https://natours-frontend-kohl.vercel.app/resetPassword/${resetToken}`;
 
+  try {
     await new Email(user, resetURL).sendPasswordReset();
 
     res.status(200).json({
-        status:'success',
-        message:'Token sent to mail'
-    })
-})
+      status: 'success',
+      message: 'Token sent to mail'
+    });
+  } catch (err) {
+    // IF EMAIL FAILS: Erase the tokens so they can try again later
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    console.error('SMTP ERROR:', err);
+    return next(new appError('There was an error sending the password reset email. Try again later!', 500));
+  }
+});
 
 
 exports.resetPassword=catchAsync(async(req,res,next)=>{
