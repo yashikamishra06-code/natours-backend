@@ -22,7 +22,7 @@ console.log(process.env.NODE_ENV)
 if (process.env.NODE_ENV=='development'){
     app.use(morgan('dev'))
 }
-
+app.set('trust proxy', true);
 app.use((req,res,next)=>{
     req.req_time=Date()
     next()
