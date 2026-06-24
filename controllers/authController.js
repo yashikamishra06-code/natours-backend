@@ -40,7 +40,7 @@ exports.signUp = catchAsync(async (req, res, next) => {
 
   await newUser.save({ validateBeforeSave: false });
 
-  const verificationURL = `http://localhost:5173/verify-email/${verificationToken}`;
+  const verificationURL = `https://natours-frontend-kohl.vercel.app/verify-email/${verificationToken}`;
 
   await new Email(newUser, verificationURL).sendEmailVerification();
 
@@ -146,7 +146,7 @@ exports.forgotPassword=catchAsync(async(req,res,next)=>{
     const resetToken=user.createPasswordResetTokens()
     await user.save({validateBeforeSave:false})
 
-    const resetURL = `http://localhost:5173/resetPassword/${resetToken}`;
+    const resetURL = `https://natours-frontend-kohl.vercel.app/resetPassword/${resetToken}`;
 
     const message=`Forgot ur password? Submit a PATCH request with password and passwordConfirm to: ${resetURL}`
 
